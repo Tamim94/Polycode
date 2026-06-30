@@ -1,0 +1,38 @@
+version: '3.9'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - VITE_WS_URL=ws://localhost:8080
+        - VITE_KEY_SERVER_URL=http://localhost:8000
+        - VITE_VIDEO_SERVER_URL=http://localhost:8081
+    ports:
+      - "3000:80"
+    depends_on:
+      - realtime-server
+      - key-server
+      - video-server
+
+  realtime-server:
+    build: ./realtime-server
+    ports:
+      - "8080:8080"
+
+  key-server:
+    build: ./key-server
+    ports:
+      - "8000:8000"
+    environment:
+      - AES_KEY_HEX=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+      - JWT_SECRET=polycode-demo-secret-change-in-production
+
+  video-server:
+    build:
+      context: ./video-server
+      args:
+        - AES_KEY_HEX=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+        - KEY_SERVER_URL=http://localhost:8000/key
+    ports:
+      - "8081:80"
