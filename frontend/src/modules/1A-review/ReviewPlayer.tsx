@@ -1,11 +1,13 @@
-import { useCallback, useRef, useState } from 'react'
+import Hls from 'hls.js'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
+import { KEY_SERVER_URL, VIDEO_SERVER_URL } from '../../config'
 import type { Comment, ToolType } from './types'
 import { useCanvas } from './useCanvas'
 import { useWebSocket } from './useWebSocket'
 import styles from './ReviewPlayer.module.css'
 
-// Stable client ID for this browser tab — not persisted, intentionally ephemeral
+// Stable identity for this browser tab — intentionally ephemeral
 const CLIENT_ID = uuidv4()
 
 function formatTime(s: number) {
@@ -14,17 +16,29 @@ function formatTime(s: number) {
 }
 
 export default function ReviewPlayer() {
-  const [sessionId, setSessionId] = useState(() => uuidv4().slice(0, 8))
-  const [pendingId, setPendingId] = useState(sessionId)
-  const [videoUrl, setVideoUrl] = useState('/sample.mp4')
-  const [tool, setTool] = useState<ToolType>('pen')
-  const [color, setColor] = useState('#ef4444')
+  // Seed session ID from ?session= URL param so sharing a link auto-joins the session
+  const [sessionId, setSessionId] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('session') || uuidv4().slice(0, 8)
+  })
+  const [pendingId, setPendingId]     = useState(sessionId)
+  const [videoUrl, setVideoUrl]       = useState('/sample.mp4')
+  const [streamMode, setStreamMode]   = useState<'plain' | 'secured'>('plain')
+  const [securingStream, setSecuringStream] = useState(false)
+  const [tool, setTool]               = useState<ToolType>('pen')
+  const [color, setColor]             = useState('#ef4444')
   const [strokeWidth, setStrokeWidth] = useState(3)
-  const [drawMode, setDrawMode] = useState(false)
+  const [drawMode, setDrawMode]       = useState(false)
   const [commentText, setCommentText] = useState('')
+  const [copyFeedback, setCopyFeedback] = useState(false)
 
   const videoRef = useRef<HTMLVideoElement>(null)
+  const hlsRef   = useRef<Hls | null>(null)
+
   const { connected, state, setState, sendStroke, sendComment, sendClear } = useWebSocket(sessionId)
+
+  // Tear down hls.js when the component unmounts
+  useEffect(() => () => { hlsRef.current?.destroy() }, [])
 
   const handleStrokeComplete = useCallback(
     (stroke: Parameters<typeof sendStroke>[0]) => {
@@ -43,11 +57,79 @@ export default function ReviewPlayer() {
     onStrokeComplete: handleStrokeComplete,
   })
 
+  // ── Session management ─────────────────────────────────────────────────
+
   function joinSession() {
     const id = pendingId.trim() || uuidv4().slice(0, 8)
     setPendingId(id)
     setSessionId(id)
+    // Push the session ID into the URL so sharing the tab URL auto-joins
+    window.history.pushState({}, '', `?session=${id}`)
   }
+
+  function copyLink() {
+    const url = `${window.location.origin}${window.location.pathname}?session=${sessionId}`
+    navigator.clipboard.writeText(url)
+      .then(() => { setCopyFeedback(true); setTimeout(() => setCopyFeedback(false), 2000) })
+      .catch(() => {})
+  }
+
+  // ── Video / stream management ──────────────────────────────────────────
+
+  function handleVideoUrlChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setVideoUrl(e.target.value)
+    // Switching to a plain URL: destroy hls.js if it was active
+    if (hlsRef.current) {
+      hlsRef.current.destroy()
+      hlsRef.current = null
+      setStreamMode('plain')
+    }
+  }
+
+  function exitSecuredMode() {
+    hlsRef.current?.destroy()
+    hlsRef.current = null
+    setStreamMode('plain')
+  }
+
+  // Connects 1A directly to the 2A pipeline:
+  // auto-fetches a token from the key-server, then loads the AES-128
+  // encrypted HLS stream so annotations sit on top of a secured video.
+  async function loadSecuredStream() {
+    if (!videoRef.current) return
+    setSecuringStream(true)
+    try {
+      const res = await fetch(`${KEY_SERVER_URL}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'demo', password: 'polycode2024' }),
+      })
+      if (!res.ok) throw new Error('Token request failed')
+      const { access_token } = await res.json()
+
+      hlsRef.current?.destroy()
+      const hls = new Hls({
+        xhrSetup: (xhr, url) => {
+          if (url.includes('/key')) {
+            xhr.setRequestHeader('Authorization', `Bearer ${access_token}`)
+          }
+        },
+      })
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        videoRef.current?.play().catch(() => {})
+      })
+      hls.loadSource(`${VIDEO_SERVER_URL}/hls/stream.m3u8`)
+      hls.attachMedia(videoRef.current)
+      hlsRef.current = hls
+      setStreamMode('secured')
+    } catch (err) {
+      console.error('Secured stream error:', err)
+    } finally {
+      setSecuringStream(false)
+    }
+  }
+
+  // ── Comments / canvas ──────────────────────────────────────────────────
 
   function postComment() {
     if (!commentText.trim()) return
@@ -84,10 +166,6 @@ export default function ReviewPlayer() {
     a.click()
   }
 
-  function copySessionId() {
-    navigator.clipboard.writeText(sessionId).catch(() => {})
-  }
-
   const sortedComments = [...state.comments].sort((a, b) => a.videoTime - b.videoTime)
 
   return (
@@ -107,7 +185,9 @@ export default function ReviewPlayer() {
             placeholder="session ID"
           />
           <button className={styles.btn} onClick={joinSession}>Join</button>
-          <button className={styles.btnGhost} onClick={copySessionId} title="Copy session ID to share">Copy ID</button>
+          <button className={styles.btnGhost} onClick={copyLink}>
+            {copyFeedback ? 'Copied!' : 'Copy Link'}
+          </button>
         </div>
 
         <div className={styles.group}>
@@ -138,26 +218,44 @@ export default function ReviewPlayer() {
 
       </div>
 
-      {/* ── Video URL bar ─────────────────────────────────────────────────── */}
+      {/* ── Video source bar ──────────────────────────────────────────────── */}
       <div className={styles.urlBar}>
         <label className={styles.label}>Video</label>
-        <input
-          className={styles.urlInput}
-          value={videoUrl}
-          onChange={e => setVideoUrl(e.target.value)}
-          placeholder="URL or /sample.mp4"
-        />
+        {streamMode === 'secured' ? (
+          <>
+            <span className={styles.secureBadge}>Secured stream active — AES-128 / Zero-Trust (2A)</span>
+            <button className={styles.btnGhost} onClick={exitSecuredMode}>Switch to plain</button>
+          </>
+        ) : (
+          <>
+            <input
+              className={styles.urlInput}
+              value={videoUrl}
+              onChange={handleVideoUrlChange}
+              placeholder="Video URL or /sample.mp4"
+            />
+            <button
+              className={styles.btnSecure}
+              onClick={loadSecuredStream}
+              disabled={securingStream}
+              title="Fetch a JWT from the key-server and load the AES-128 encrypted stream from the 2A pipeline"
+            >
+              {securingStream ? 'Connecting…' : 'Load Secured Stream (2A)'}
+            </button>
+          </>
+        )}
       </div>
 
       {/* ── Main content ──────────────────────────────────────────────────── */}
       <div className={styles.content}>
 
-        {/* Video + canvas */}
         <div className={styles.videoArea}>
           <div className={styles.videoWrap}>
+            {/* When hls.js is active (secured mode) the src must be absent —
+                hls.js owns the media element directly */}
             <video
               ref={videoRef}
-              src={videoUrl}
+              src={streamMode === 'plain' ? videoUrl : undefined}
               controls
               className={styles.video}
               crossOrigin="anonymous"
@@ -171,12 +269,11 @@ export default function ReviewPlayer() {
               {...canvasHandlers}
             />
             {drawMode && (
-              <div className={styles.drawBadge}>Drawing mode — click drag to annotate</div>
+              <div className={styles.drawBadge}>Drawing mode — click & drag to annotate</div>
             )}
           </div>
         </div>
 
-        {/* Comment panel */}
         <aside className={styles.panel}>
           <h3 className={styles.panelTitle}>Comments ({state.comments.length})</h3>
 

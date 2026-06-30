@@ -118,6 +118,32 @@
 
 .slider { width: 80px; accent-color: #a78bfa; }
 
+.btnSecure {
+  padding: 0.3rem 0.7rem;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  background: #134e4a;
+  border: 1px solid #0d9488;
+  color: #5eead4;
+  font-weight: 600;
+  transition: all 0.12s;
+}
+.btnSecure:hover:not(:disabled) { background: #0d9488; color: #fff; }
+.btnSecure:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.secureBadge {
+  flex: 1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #5eead4;
+  background: #134e4a;
+  border: 1px solid #0d9488;
+  border-radius: 5px;
+  padding: 0.3rem 0.7rem;
+}
+
 /* ── Video URL bar ────────────────────────────────────────────────────────── */
 
 .urlBar {

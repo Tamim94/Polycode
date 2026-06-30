@@ -1,6 +1,6 @@
 # Polycode
 
-A two-module hackathon project demonstrating real-time collaborative video annotation (1A) and zero-trust encrypted video streaming (2A), deployed as a single Docker Compose stack.
+A hackathon project demonstrating real-time collaborative video annotation (1A) and zero-trust encrypted video streaming (2A), deployed as a single Docker Compose stack. The two modules are integrated: the 1A player can load the 2A encrypted stream directly, and sessions are shareable via URL.
 
 ---
 
@@ -12,10 +12,10 @@ Polycode contains two independent but related modules:
 
 | Module | Name | What it demonstrates |
 |--------|------|----------------------|
-| 1A | Lecteur de Revue Augmenté | Live multi-user canvas annotations on top of a video, synced via WebSockets |
+| 1A | Lecteur de Revue Augmenté | Live multi-user canvas annotations on top of a video, synced via WebSockets; URL-based session sharing |
 | 2A | Architecture Zéro-Trust | AES-128 encrypted HLS video where every decryption key request is token-gated |
 
-Both modules share a single React frontend (tab-switched), and the entire stack starts with one command.
+Both modules share a single React frontend (tab-switched) and are integrated: the 1A player can load the 2A encrypted stream in one click, creating an end-to-end secure annotation workflow. The entire stack starts with one command.
 
 ---
 
