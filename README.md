@@ -29,6 +29,8 @@ Users open the same session ID in multiple browser tabs. They can:
 - Post timestamped comments that, when clicked, seek the video to that moment
 - See all other users' drawings appear in real time
 - Export the full session (strokes + comments) as a JSON file
+- Share a session via URL — the session ID is stored in `?session=xxx`; clicking **Copy Link** copies the full shareable URL that auto-joins anyone who opens it
+- Load the 2A encrypted stream directly in the 1A player — clicking **Load Secured Stream (2A)** auto-fetches a JWT from the key server, initialises hls.js with the token injected on key requests, and plays the AES-128 encrypted video under the annotation canvas
 
 ### Why it is architected this way
 
@@ -39,6 +41,10 @@ Users open the same session ID in multiple browser tabs. They can:
 **WebSocket for sync**: HTTP polling would introduce latency and waste bandwidth. A persistent WebSocket connection broadcasts each stroke as soon as it is committed (mouse-up), achieving real-time sync with minimal overhead.
 
 **Reconnect resync**: when a client reconnects after a dropped connection, it immediately sends a `join` message. The server responds with a `sync` message containing the complete current session state (all strokes and comments). The client re-renders from that snapshot. No data is lost from the other clients' perspective.
+
+**URL-encoded session ID**: the session ID is stored in the URL as `?session=xxx` via `window.history.pushState`. Opening a shared URL auto-joins that session on load. No server-side routing is needed — the ID is read from `URLSearchParams` in the React component before the WebSocket connection is opened.
+
+**1A/2A integration**: the 1A player includes a "Load Secured Stream (2A)" button. It posts to the key server with the demo credentials, receives a JWT, then initialises hls.js with `xhrSetup` to inject `Authorization: Bearer <token>` on every key request — exactly the same mechanism used in the standalone 2A player. The canvas overlay remains fully functional on top of the decrypted video stream.
 
 ---
 
@@ -157,7 +163,7 @@ Message flow:
 ```
   docker-compose up --build
   │
-  ├── frontend        (port 3000)   React + Vite → Nginx static
+  ├── frontend        (port 4000)   React + Vite → Nginx static
   │     ├── /         → Module 1A tab
   │     └── /         → Module 2A tab (toggled)
   │

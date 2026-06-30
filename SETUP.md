@@ -27,7 +27,7 @@ cd polycode
 docker compose up --build
 
 # 3. Open the app
-# http://localhost:3000
+# http://localhost:4000
 ```
 
 First build takes 3–5 minutes (npm install + ffmpeg video encoding inside containers). Subsequent starts without `--build` are near-instant.
@@ -43,7 +43,7 @@ docker compose down
 
 | Service | URL | What's there |
 |---------|-----|--------------|
-| Frontend | http://localhost:3000 | React app (both modules) |
+| Frontend | http://localhost:4000 | React app (both modules) |
 | Realtime server | ws://localhost:8080 | WebSocket endpoint (Module 1A) |
 | Key server | http://localhost:8000 | Token issuance + AES key gate (Module 2A) |
 | Video server | http://localhost:8082 | Encrypted HLS playlist and segments (Module 2A) |
@@ -53,13 +53,15 @@ docker compose down
 
 ## Module 1A — Testing Multi-User Real-Time Sync
 
-1. Open **two browser tabs**, both pointing to `http://localhost:3000`.
-2. In Tab 1, note the **Session ID** shown in the toolbar (e.g., `a3f7b2c1`).
-3. In Tab 2, paste that same session ID into the session input and click **Join**.
-4. Tab 2 will receive a `sync` message with Tab 1's current state (if any).
+1. Open `http://localhost:4000` in Tab 1. A session ID is auto-generated (e.g., `a3f7b2c1`) and added to the URL as `?session=a3f7b2c1`.
+2. Click **Copy Link** in the toolbar — it copies the full URL including the session ID.
+3. Paste the copied URL into Tab 2. The session ID is read from the URL on load and Tab 2 auto-joins immediately.
+4. Tab 2 receives a `sync` message with Tab 1's current state (if any).
 5. Toggle **Drawing ON** in either tab and draw on the canvas.
 6. The annotation appears in the other tab within milliseconds.
 7. Post a comment — it appears in both tabs with its timestamp. Click it to seek the video.
+
+Alternatively, join manually: enter a session ID in the input field and click **Join** (or press Enter). The URL updates to reflect the new session.
 
 **Testing reconnect resync:**
 1. Draw some strokes in Tab 1.
@@ -68,6 +70,24 @@ docker compose down
 
 **Export:**
 Click **Export JSON** in either tab. You receive a file like `session-a3f7b2c1.json` containing all strokes (with tool, color, coordinates) and comments (with text and video timestamp).
+
+---
+
+## End-to-End Demo — Annotating a Secured Stream (1A + 2A)
+
+This demonstrates the cross-module integration: the 2A zero-trust pipeline feeds directly into the 1A annotation canvas.
+
+1. Open `http://localhost:4000` and stay on the **1A** tab.
+2. In the video source bar, click **Load Secured Stream (2A)**.
+3. The player automatically:
+   - Posts demo credentials (`demo` / `polycode2024`) to the key server and receives a JWT
+   - Initialises hls.js with the token injected on key requests (`Authorization: Bearer <token>`)
+   - Loads `http://localhost:8082/hls/stream.m3u8` (the AES-128 encrypted stream)
+4. The video source bar changes to a teal **"Secured stream active — AES-128 / Zero-Trust (2A)"** badge.
+5. Toggle **Drawing ON** and annotate the secured video exactly as you would a plain video.
+6. Share the session link with a collaborator — they join and see your annotations in real time, on top of the same secured stream.
+
+To return to plain video, click **Switch to plain** in the source bar.
 
 ---
 
@@ -173,17 +193,17 @@ docker compose up --build video-server
 Error: bind: address already in use
 ```
 
-Another process is using port 3000, 8000, 8080, or 8082. Find and stop it:
+Another process is using port 4000, 8000, 8080, or 8082. Find and stop it:
 
 ```bash
 # macOS / Linux
-lsof -i :3000
+lsof -i :4000
 
 # Windows (PowerShell)
-netstat -ano | findstr :3000
+netstat -ano | findstr :4000
 ```
 
-Or change the host port in `docker-compose.yml` (e.g., `"3001:80"`).
+Or change the host port in `docker-compose.yml` (e.g., `"4001:80"`).
 
 ---
 
