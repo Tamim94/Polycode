@@ -261,10 +261,10 @@ Alternatively, paste any publicly accessible `.mp4` URL into the Video URL input
 
 ### Docker Compose version mismatch
 
-The `version: '3.9'` field in `docker-compose.yml` requires Compose v2. If you have an older installation:
+The project uses the modern `docker compose` CLI (plugin, no dash). If you get `docker: 'compose' is not a docker command`:
 
 ```bash
-docker-compose --version   # should show 2.x
+docker-compose --version   # old standalone binary — should show 2.x
 ```
 
 Upgrade Docker Desktop, or install the Compose plugin: https://docs.docker.com/compose/install/

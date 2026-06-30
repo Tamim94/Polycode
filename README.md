@@ -213,10 +213,10 @@ Polycode contient deux modules indépendants mais complémentaires :
 
 | Module | Nom | Ce qu'il démontre |
 |--------|-----|-------------------|
-| 1A | Lecteur de Revue Augmenté | Annotations collaboratives en temps réel sur une vidéo via WebSockets |
+| 1A | Lecteur de Revue Augmenté | Annotations collaboratives en temps réel sur une vidéo via WebSockets ; sessions partageables par URL |
 | 2A | Architecture Zéro-Trust | Streaming HLS chiffré AES-128, chaque clé de déchiffrement étant protégée par un token |
 
-Les deux modules partagent un seul frontend React (navigation par onglets), et l'ensemble du stack démarre avec une seule commande.
+Les deux modules partagent un seul frontend React (navigation par onglets) et sont intégrés : le lecteur 1A peut charger le flux chiffré 2A en un clic, créant un flux de travail d'annotation sécurisé de bout en bout. L'ensemble du stack démarre avec une seule commande.
 
 ---
 
@@ -230,6 +230,8 @@ Les utilisateurs ouvrent le même identifiant de session dans plusieurs onglets 
 - Poster des commentaires horodatés qui, une fois cliqués, font avancer la vidéo au bon moment
 - Voir en temps réel les dessins de tous les autres utilisateurs
 - Exporter la session complète (traits + commentaires) sous forme de fichier JSON
+- Partager une session par URL — l'identifiant de session est stocké dans `?session=xxx` ; cliquer sur **Copy Link** copie l'URL complète qui rejoint automatiquement la session
+- Charger le flux chiffré 2A directement dans le lecteur 1A — le bouton **Load Secured Stream (2A)** récupère automatiquement un JWT du serveur de clés, initialise hls.js avec le token injecté sur les requêtes de clé, et joue la vidéo AES-128 chiffrée sous la couche d'annotation
 
 ### Pourquoi cette architecture
 
@@ -240,6 +242,10 @@ Les utilisateurs ouvrent le même identifiant de session dans plusieurs onglets 
 **WebSocket pour la synchronisation** : le polling HTTP introduirait de la latence et du gaspillage de bande passante. Une connexion WebSocket persistante diffuse chaque trait dès qu'il est validé (relâchement du bouton souris), assurant une synchronisation en temps réel avec un minimum de surcharge.
 
 **Resynchronisation à la reconnexion** : quand un client se reconnecte après une coupure, il envoie immédiatement un message `join`. Le serveur répond avec un message `sync` contenant l'état complet de la session (tous les traits et commentaires). Le client re-rend depuis ce snapshot. Aucune donnée n'est perdue.
+
+**Identifiant de session dans l'URL** : l'identifiant de session est stocké dans l'URL via `?session=xxx` (`window.history.pushState`). Ouvrir un lien partagé rejoint automatiquement la session au chargement. Aucun routage côté serveur n'est nécessaire — l'identifiant est lu dans `URLSearchParams` dans le composant React avant l'ouverture de la connexion WebSocket.
+
+**Intégration 1A/2A** : le lecteur 1A inclut un bouton "Load Secured Stream (2A)". Il envoie une requête `POST /token` au serveur de clés avec les identifiants de démonstration, reçoit un JWT, puis initialise hls.js avec `xhrSetup` pour injecter `Authorization: Bearer <token>` sur chaque requête de clé — exactement le même mécanisme que dans le lecteur 2A autonome. La couche Canvas reste pleinement fonctionnelle sur le flux vidéo déchiffré.
 
 ---
 
@@ -358,7 +364,7 @@ Flux de messages :
 ```
   docker-compose up --build
   │
-  ├── frontend        (port 3000)   React + Vite → Nginx statique
+  ├── frontend        (port 4000)   React + Vite → Nginx statique
   │     ├── /         → Onglet Module 1A
   │     └── /         → Onglet Module 2A (basculé)
   │
