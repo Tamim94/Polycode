@@ -46,7 +46,7 @@ docker compose down
 | Frontend | http://localhost:3000 | React app (both modules) |
 | Realtime server | ws://localhost:8080 | WebSocket endpoint (Module 1A) |
 | Key server | http://localhost:8000 | Token issuance + AES key gate (Module 2A) |
-| Video server | http://localhost:8081 | Encrypted HLS playlist and segments (Module 2A) |
+| Video server | http://localhost:8082 | Encrypted HLS playlist and segments (Module 2A) |
 | Key server docs | http://localhost:8000/docs | FastAPI auto-generated OpenAPI UI |
 
 ---
@@ -142,7 +142,7 @@ Content-Length: 16
 - `GET /key` without a token → **403**
 - `GET /key` with a forged token → **403**
 - `GET /key` with a valid token → **200 + key bytes**
-- The encrypted `.ts` segments at `http://localhost:8081/hls/segment000.ts` are downloadable but **unplayable** without the key
+- The encrypted `.ts` segments at `http://localhost:8082/hls/segment000.ts` are downloadable but **unplayable** without the key
 
 ---
 
@@ -173,7 +173,7 @@ docker compose up --build video-server
 Error: bind: address already in use
 ```
 
-Another process is using port 3000, 8000, 8080, or 8081. Find and stop it:
+Another process is using port 3000, 8000, 8080, or 8082. Find and stop it:
 
 ```bash
 # macOS / Linux
@@ -234,7 +234,7 @@ Alternatively, paste any publicly accessible `.mp4` URL into the Video URL input
 ### Module 2A: player shows "no key" or black screen
 
 1. Confirm the key server is running: `curl http://localhost:8000/health`
-2. Confirm the video server has segments: `curl -I http://localhost:8081/hls/stream.m3u8`
+2. Confirm the video server has segments: `curl -I http://localhost:8082/hls/stream.m3u8`
 3. Check browser console for 403 errors — the token may have expired (TTL is 5 minutes). Click **Get Token** again in the player UI.
 
 ---

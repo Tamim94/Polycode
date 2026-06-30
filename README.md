@@ -128,7 +128,7 @@ Message flow:
        │        │
        │   ┌────▼────────────────────┐
        │   │     video-server         │
-       │   │  Nginx, port 8081        │
+       │   │  Nginx, port 8082        │
        │   │  serves .m3u8 + .ts      │
        │   └─────────────────────────┘
        │        │
@@ -165,7 +165,7 @@ Message flow:
   │
   ├── key-server      (port 8000)   FastAPI token issuer + AES key gate
   │
-  └── video-server    (port 8081)   Nginx serving encrypted HLS
+  └── video-server    (port 8082)   Nginx serving encrypted HLS
         └── /hls/stream.m3u8
         └── /hls/segment*.ts
 ```
@@ -323,7 +323,7 @@ Flux de messages :
        │        │
        │   ┌────▼────────────────────┐
        │   │     video-server         │
-       │   │  Nginx, port 8081        │
+       │   │  Nginx, port 8082        │
        │   │  sert .m3u8 + .ts        │
        │   └─────────────────────────┘
        │        │
@@ -360,7 +360,7 @@ Flux de messages :
   │
   ├── key-server      (port 8000)   Émetteur de tokens + porte de clé AES FastAPI
   │
-  └── video-server    (port 8081)   Nginx servant le HLS chiffré
+  └── video-server    (port 8082)   Nginx servant le HLS chiffré
         └── /hls/stream.m3u8
         └── /hls/segment*.ts
 ```
