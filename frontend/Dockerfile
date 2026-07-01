@@ -16,8 +16,8 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 
-# Produce a 15-second synthetic test video so the demo works fully offline
-RUN mkdir -p public && ffmpeg -y \
+# Use provided sample.mp4 if present, otherwise generate a synthetic one
+RUN mkdir -p public && [ -f public/sample.mp4 ] || ffmpeg -y \
   -f lavfi -i "testsrc=duration=15:size=640x360:rate=24" \
   -f lavfi -i "sine=frequency=440:duration=15" \
   -map 0:v -map 1:a \
