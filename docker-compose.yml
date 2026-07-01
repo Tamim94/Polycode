@@ -6,12 +6,14 @@ services:
         - VITE_WS_URL=ws://localhost:8080
         - VITE_KEY_SERVER_URL=http://localhost:8000
         - VITE_VIDEO_SERVER_URL=http://localhost:8082
+        - VITE_AI_SERVER_URL=http://localhost:8001
     ports:
       - "4000:80"
     depends_on:
       - realtime-server
       - key-server
       - video-server
+      - ai-data
 
   realtime-server:
     build: ./realtime-server
@@ -34,3 +36,8 @@ services:
         - KEY_SERVER_URL=http://localhost:8000/key
     ports:
       - "8082:80"
+
+  ai-data:
+    build: ./ai-data
+    ports:
+      - "8001:8001"

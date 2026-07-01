@@ -388,3 +388,139 @@
   font-size: 0.82rem;
 }
 .commentInput:focus { outline: none; border-color: #a78bfa; }
+
+/* ── Panel tabs (Comments / Chapters) ────────────────────────────────────── */
+
+.panelTabs {
+  display: flex;
+  border-bottom: 1px solid #2a2a38;
+  flex-shrink: 0;
+}
+
+.panelTab {
+  flex: 1;
+  padding: 0.6rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #6060a0;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.panelTab:hover { color: #c4b5fd; }
+
+.panelTabActive {
+  color: #5eead4;
+  border-bottom-color: #5eead4;
+  font-weight: 600;
+}
+
+/* ── Chapters ─────────────────────────────────────────────────────────────── */
+
+.chapterPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.analyzeEmpty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.analyzeHint {
+  font-size: 0.8rem;
+  color: #6060a0;
+  line-height: 1.5;
+}
+
+.btnAnalyze {
+  padding: 0.5rem 1.2rem;
+  background: #134e4a;
+  border: 1px solid #0d9488;
+  border-radius: 6px;
+  color: #5eead4;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.btnAnalyze:hover { background: #0d9488; color: #fff; }
+
+.chapterList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.chapterItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  background: #0f0f13;
+  border: 1px solid #2a2a38;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: border-color 0.12s;
+}
+.chapterItem:hover { border-color: #5eead4; }
+
+/* ── Chapter timeline bar (under the video) ──────────────────────────────── */
+
+.chapterBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.chapterBarLabel {
+  font-size: 0.68rem;
+  color: #6060a0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chapterTrack {
+  position: relative;
+  flex: 1;
+  height: 20px;
+  background: #0f0f13;
+  border: 1px solid #2a2a38;
+  border-radius: 4px;
+}
+
+.chapterTick {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  background: #5eead4;
+  border-radius: 2px;
+  border: none;
+  cursor: pointer;
+  transform: translateX(-50%);
+  padding: 0;
+  transition: width 0.1s, background 0.1s;
+}
+.chapterTick:hover {
+  width: 5px;
+  background: #a7f3d0;
+}

@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+openai-whisper
+argostranslate
+sentence-transformers
+yake
+sumy
+nltk

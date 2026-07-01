@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import ReviewPlayer from './modules/1A-review/ReviewPlayer'
 import ZeroTrustPlayer from './modules/2A-zerotrust/ZeroTrustPlayer'
+import AIAnalyzer from './modules/3A-ai/AIAnalyzer'
 import styles from './App.module.css'
 
-type Tab = '1A' | '2A'
+type Tab = '1A' | '2A' | '3A'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('1A')
@@ -25,11 +26,19 @@ export default function App() {
           >
             2A — Architecture Zéro-Trust
           </button>
+          <button
+            className={tab === '3A' ? styles.active : ''}
+            onClick={() => setTab('3A')}
+          >
+            3A — IA & Data
+          </button>
         </nav>
       </header>
 
       <main className={styles.main}>
-        {tab === '1A' ? <ReviewPlayer /> : <ZeroTrustPlayer />}
+        {tab === '1A' && <ReviewPlayer />}
+        {tab === '2A' && <ZeroTrustPlayer />}
+        {tab === '3A' && <AIAnalyzer />}
       </main>
     </div>
   )

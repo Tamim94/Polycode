@@ -4,10 +4,12 @@ WORKDIR /app
 ARG VITE_WS_URL=ws://localhost:8080
 ARG VITE_KEY_SERVER_URL=http://localhost:8000
 ARG VITE_VIDEO_SERVER_URL=http://localhost:8082
+ARG VITE_AI_SERVER_URL=http://localhost:8001
 
 ENV VITE_WS_URL=$VITE_WS_URL
 ENV VITE_KEY_SERVER_URL=$VITE_KEY_SERVER_URL
 ENV VITE_VIDEO_SERVER_URL=$VITE_VIDEO_SERVER_URL
+ENV VITE_AI_SERVER_URL=$VITE_AI_SERVER_URL
 
 # ffmpeg generates the offline sample video for the 1A player demo
 RUN apk add --no-cache ffmpeg

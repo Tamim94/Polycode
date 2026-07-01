@@ -1,7 +1,7 @@
 import Hls from 'hls.js'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import { KEY_SERVER_URL, VIDEO_SERVER_URL } from '../../config'
+import { AI_SERVER_URL, KEY_SERVER_URL, VIDEO_SERVER_URL } from '../../config'
 import type { Comment, ToolType } from './types'
 import { useCanvas } from './useCanvas'
 import { useWebSocket } from './useWebSocket'
@@ -19,6 +19,11 @@ function clientColor(clientId: string): string {
 function formatTime(s: number) {
   const m = Math.floor(s / 60)
   return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`
+}
+
+interface Chapter {
+  start: number
+  title: string
 }
 
 export default function ReviewPlayer() {
@@ -41,6 +46,10 @@ export default function ReviewPlayer() {
   const [playbackRate, setPlaybackRate] = useState(1)
   const [videoCurrentTime, setVideoCurrentTime] = useState(0)
   const [remoteCursors, setRemoteCursors] = useState<Record<string, { x: number; y: number; t: number }>>({})
+  const [panelTab, setPanelTab]         = useState<'comments' | 'chapters'>('comments')
+  const [chapters, setChapters]         = useState<Chapter[]>([])
+  const [chaptersLoading, setChaptersLoading] = useState(false)
+  const [videoDuration, setVideoDuration] = useState(0)
 
   const videoRef         = useRef<HTMLVideoElement>(null)
   const hlsRef           = useRef<Hls | null>(null)
@@ -254,6 +263,26 @@ export default function ReviewPlayer() {
     }
   }
 
+  // Loads the real secured video (if not already playing) and runs the AI
+  // pipeline on that same source, so the chapters always match what's on screen.
+  async function handleAnalyze() {
+    setPanelTab('chapters')
+    setChaptersLoading(true)
+    try {
+      if (streamMode !== 'secured') {
+        await loadSecuredStream()
+      }
+      const res = await fetch(`${AI_SERVER_URL}/analyze?video_name=demo.mp4`, { method: 'POST' })
+      if (!res.ok) throw new Error('Analysis failed')
+      const data = await res.json()
+      setChapters(data.chapters ?? [])
+    } catch (err) {
+      console.error('Video analysis error:', err)
+    } finally {
+      setChaptersLoading(false)
+    }
+  }
+
   function postComment() {
     if (!commentText.trim()) return
     const comment: Comment = {
@@ -280,7 +309,7 @@ export default function ReviewPlayer() {
 
   function exportJson() {
     const payload = JSON.stringify(
-      { sessionId, exportedAt: new Date().toISOString(), ...state },
+      { sessionId, exportedAt: new Date().toISOString(), ...state, chapters },
       null, 2,
     )
     const a = Object.assign(document.createElement('a'), {
@@ -356,7 +385,7 @@ export default function ReviewPlayer() {
         </div>
 
         <div className={styles.group}>
-          <label className={styles.label}>Vitesse</label>
+          <label className={styles.label}>Speed</label>
           {[0.25, 0.5, 1, 1.5, 2].map(r => (
             <button
               key={r}
@@ -434,6 +463,7 @@ export default function ReviewPlayer() {
               controls
               className={styles.video}
               crossOrigin="anonymous"
+              onLoadedMetadata={() => setVideoDuration(videoRef.current?.duration ?? 0)}
             />
             <canvas
               ref={canvasRef}
@@ -464,33 +494,97 @@ export default function ReviewPlayer() {
               <div className={styles.syncBadge}>Sync actif</div>
             )}
           </div>
+
+          {chapters.length > 0 && videoDuration > 0 && isFinite(videoDuration) && (
+            <div className={styles.chapterBar}>
+              <span className={styles.chapterBarLabel}>Chapters</span>
+              <div className={styles.chapterTrack}>
+                {chapters.map((ch, i) => (
+                  <button
+                    key={i}
+                    className={styles.chapterTick}
+                    style={{ left: `${(ch.start / videoDuration) * 100}%` }}
+                    title={`${formatTime(ch.start)} — ${ch.title}`}
+                    onClick={() => seekTo(ch.start)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <aside className={styles.panel}>
-          <h3 className={styles.panelTitle}>Comments ({state.comments.length})</h3>
 
-          <div className={styles.commentList}>
-            {sortedComments.length === 0 && (
-              <p className={styles.empty}>No comments yet. Post one below.</p>
-            )}
-            {sortedComments.map(c => (
-              <button key={c.id} className={styles.commentItem} onClick={() => seekTo(c.videoTime)}>
-                <span className={styles.timestamp}>{formatTime(c.videoTime)}</span>
-                <span className={styles.commentText}>{c.text}</span>
-              </button>
-            ))}
+          <div className={styles.panelTabs}>
+            <button
+              className={`${styles.panelTab} ${panelTab === 'comments' ? styles.panelTabActive : ''}`}
+              onClick={() => setPanelTab('comments')}
+            >
+              Comments ({state.comments.length})
+            </button>
+            <button
+              className={`${styles.panelTab} ${panelTab === 'chapters' ? styles.panelTabActive : ''}`}
+              onClick={() => setPanelTab('chapters')}
+            >
+              Chapters {chapters.length > 0 ? `(${chapters.length})` : ''}
+            </button>
           </div>
 
-          <div className={styles.commentForm}>
-            <input
-              className={styles.commentInput}
-              placeholder="Comment at current timestamp…"
-              value={commentText}
-              onChange={e => setCommentText(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && postComment()}
-            />
-            <button className={styles.btn} onClick={postComment}>Post</button>
-          </div>
+          {panelTab === 'comments' && (
+            <>
+              <div className={styles.commentList}>
+                {sortedComments.length === 0 && (
+                  <p className={styles.empty}>No comments yet. Post one below.</p>
+                )}
+                {sortedComments.map(c => (
+                  <button key={c.id} className={styles.commentItem} onClick={() => seekTo(c.videoTime)}>
+                    <span className={styles.timestamp}>{formatTime(c.videoTime)}</span>
+                    <span className={styles.commentText}>{c.text}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className={styles.commentForm}>
+                <input
+                  className={styles.commentInput}
+                  placeholder="Comment at current timestamp…"
+                  value={commentText}
+                  onChange={e => setCommentText(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && postComment()}
+                />
+                <button className={styles.btn} onClick={postComment}>Post</button>
+              </div>
+            </>
+          )}
+
+          {panelTab === 'chapters' && (
+            <div className={styles.chapterPanel}>
+              {chaptersLoading && (
+                <p className={styles.empty}>Loading the real video and transcribing it — a few seconds…</p>
+              )}
+              {!chaptersLoading && chapters.length === 0 && (
+                <div className={styles.analyzeEmpty}>
+                  <p className={styles.analyzeHint}>
+                    Loads the real secured video (2A) and transcribes it with Whisper to extract chapters automatically.
+                  </p>
+                  <button className={styles.btnAnalyze} onClick={handleAnalyze}>
+                    Analyze Video
+                  </button>
+                </div>
+              )}
+              {!chaptersLoading && chapters.length > 0 && (
+                <div className={styles.chapterList}>
+                  {chapters.map((ch, i) => (
+                    <button key={i} className={styles.chapterItem} onClick={() => seekTo(ch.start)}>
+                      <span className={styles.timestamp}>{formatTime(ch.start)}</span>
+                      <span className={styles.commentText}>{ch.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
         </aside>
 
       </div>
