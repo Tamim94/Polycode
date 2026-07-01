@@ -20,14 +20,18 @@ python3 -c "import binascii; open('$KEY_FILE', 'wb').write(binascii.unhexlify('$
 #   line 2 — local path to the key file used during encryption
 printf '%s\n%s\n' "$KEY_SERVER_URL" "$KEY_FILE" > "$KEYINFO_FILE"
 
-# Generate a synthetic 30-second test video (no external file needed)
-# and package it as AES-128 encrypted HLS
-ffmpeg -y \
-  -f lavfi -i "testsrc=duration=30:size=640x480:rate=24" \
-  -f lavfi -i "sine=frequency=440:duration=30" \
-  -map 0:v -map 1:a \
-  -c:v libx264 -preset fast -crf 28 \
-  -c:a aac -b:a 64k \
+# Use provided video.mp4 if present, otherwise generate a synthetic test video
+if [ -f /tmp/video.mp4 ]; then
+  INPUT="-i /tmp/video.mp4"
+  MAP="-map 0:v -map 0:a"
+  ENCODE="-c:v libx264 -preset fast -crf 28 -c:a aac -b:a 64k"
+else
+  INPUT="-f lavfi -i testsrc=duration=30:size=640x480:rate=24 -f lavfi -i sine=frequency=440:duration=30"
+  MAP="-map 0:v -map 1:a"
+  ENCODE="-c:v libx264 -preset fast -crf 28 -c:a aac -b:a 64k"
+fi
+
+ffmpeg -y $INPUT $MAP $ENCODE \
   -hls_time 6 \
   -hls_key_info_file "$KEYINFO_FILE" \
   -hls_playlist_type vod \

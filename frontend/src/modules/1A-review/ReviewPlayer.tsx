@@ -10,13 +10,18 @@ import styles from './ReviewPlayer.module.css'
 // Stable identity for this browser tab — intentionally ephemeral
 const CLIENT_ID = uuidv4()
 
+function clientColor(clientId: string): string {
+  let hash = 0
+  for (const c of clientId) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffff
+  return `hsl(${hash % 360}, 80%, 55%)`
+}
+
 function formatTime(s: number) {
   const m = Math.floor(s / 60)
   return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`
 }
 
 export default function ReviewPlayer() {
-  // Seed session ID from ?session= URL param so sharing a link auto-joins the session
   const [sessionId, setSessionId] = useState(() => {
     const params = new URLSearchParams(window.location.search)
     return params.get('session') || uuidv4().slice(0, 8)
@@ -31,25 +36,81 @@ export default function ReviewPlayer() {
   const [drawMode, setDrawMode]       = useState(false)
   const [commentText, setCommentText] = useState('')
   const [copyFeedback, setCopyFeedback] = useState(false)
+  const [syncMode, setSyncMode]         = useState(false)
+  const [temporalMode, setTemporalMode] = useState(false)
+  const [playbackRate, setPlaybackRate] = useState(1)
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0)
+  const [remoteCursors, setRemoteCursors] = useState<Record<string, { x: number; y: number; t: number }>>({})
 
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const hlsRef   = useRef<Hls | null>(null)
+  const videoRef         = useRef<HTMLVideoElement>(null)
+  const hlsRef           = useRef<Hls | null>(null)
+  const lastCursorSendRef = useRef(0)
+  // Timestamp of last sync received from a peer — blocks re-broadcasting for 500ms
+  const lastSyncReceivedRef = useRef(0)
+  const isSyncing = () => Date.now() - lastSyncReceivedRef.current < 500
 
-  const { connected, state, setState, sendStroke, sendComment, sendClear, sendRemoveStroke } = useWebSocket(sessionId)
+  const handleRemoteCursor = useCallback((clientId: string, x: number, y: number) => {
+    setRemoteCursors(prev => ({ ...prev, [clientId]: { x, y, t: Date.now() } }))
+  }, [])
+
+  const handleRemoteSeek = useCallback((time: number) => {
+    if (!syncMode || !videoRef.current) return
+    lastSyncReceivedRef.current = Date.now()
+    videoRef.current.currentTime = time
+  }, [syncMode])
+
+  const handleRemotePlay = useCallback((time: number) => {
+    if (!syncMode || !videoRef.current) return
+    lastSyncReceivedRef.current = Date.now()
+    videoRef.current.currentTime = time
+    videoRef.current.play().catch(() => {})
+  }, [syncMode])
+
+  const handleRemotePause = useCallback((time: number) => {
+    if (!syncMode || !videoRef.current) return
+    lastSyncReceivedRef.current = Date.now()
+    videoRef.current.currentTime = time
+    videoRef.current.pause()
+  }, [syncMode])
+
+  const { connected, state, setState, sendStroke, sendComment, sendClear, sendRemoveStroke, sendCursor, sendSeek, sendPlay, sendPause } =
+    useWebSocket(sessionId, { onSeek: handleRemoteSeek, onPlay: handleRemotePlay, onPause: handleRemotePause, onCursor: handleRemoteCursor })
 
   // Local undo stack — only tracks strokes drawn by this client
   const [undoStack, setUndoStack] = useState<Parameters<typeof sendStroke>[0][]>([])
 
-  // Tear down hls.js when the component unmounts
   useEffect(() => () => { hlsRef.current?.destroy() }, [])
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = playbackRate
+  }, [playbackRate])
+
+  // Remove cursors that haven't moved in 3s
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = Date.now()
+      setRemoteCursors(prev => {
+        const next = { ...prev }
+        let changed = false
+        for (const cid in next) {
+          if (now - next[cid].t > 3000) { delete next[cid]; changed = true }
+        }
+        return changed ? next : prev
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [])
 
   const handleStrokeComplete = useCallback(
     (stroke: Parameters<typeof sendStroke>[0]) => {
-      setUndoStack([]) // drawing a new stroke invalidates redo history
-      setState(prev => ({ ...prev, strokes: [...prev.strokes, stroke] }))
-      sendStroke(stroke)
+      setUndoStack([])
+      const stamped = temporalMode && videoRef.current
+        ? { ...stroke, videoTime: videoRef.current.currentTime }
+        : stroke
+      setState(prev => ({ ...prev, strokes: [...prev.strokes, stamped] }))
+      sendStroke(stamped)
     },
-    [sendStroke, setState],
+    [sendStroke, setState, temporalMode],
   )
 
   const handleUndo = useCallback(() => {
@@ -84,22 +145,55 @@ export default function ReviewPlayer() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [handleUndo, handleRedo])
 
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    function onTimeUpdate() {
+      setVideoCurrentTime(video!.currentTime)
+    }
+
+    function onPlay() {
+      if (!syncMode || isSyncing()) return
+      sendPlay(video!.currentTime)
+    }
+
+    function onPause() {
+      if (!syncMode || isSyncing()) return
+      sendPause(video!.currentTime)
+    }
+
+    function onSeeked() {
+      if (!syncMode || isSyncing()) return
+      sendSeek(video!.currentTime)
+    }
+
+    video.addEventListener('timeupdate', onTimeUpdate)
+    video.addEventListener('play', onPlay)
+    video.addEventListener('pause', onPause)
+    video.addEventListener('seeked', onSeeked)
+    return () => {
+      video.removeEventListener('timeupdate', onTimeUpdate)
+      video.removeEventListener('play', onPlay)
+      video.removeEventListener('pause', onPause)
+      video.removeEventListener('seeked', onSeeked)
+    }
+  }, [syncMode, sendPlay, sendPause, sendSeek])
+
   const { canvasRef, ...canvasHandlers } = useCanvas({
     clientId: CLIENT_ID,
     tool,
     color,
     width: strokeWidth,
     strokes: state.strokes,
+    currentTime: videoCurrentTime,
     onStrokeComplete: handleStrokeComplete,
   })
-
-  // ── Session management ─────────────────────────────────────────────────
 
   function joinSession() {
     const id = pendingId.trim() || uuidv4().slice(0, 8)
     setPendingId(id)
     setSessionId(id)
-    // Push the session ID into the URL so sharing the tab URL auto-joins
     window.history.pushState({}, '', `?session=${id}`)
   }
 
@@ -110,11 +204,8 @@ export default function ReviewPlayer() {
       .catch(() => {})
   }
 
-  // ── Video / stream management ──────────────────────────────────────────
-
   function handleVideoUrlChange(e: React.ChangeEvent<HTMLInputElement>) {
     setVideoUrl(e.target.value)
-    // Switching to a plain URL: destroy hls.js if it was active
     if (hlsRef.current) {
       hlsRef.current.destroy()
       hlsRef.current = null
@@ -122,15 +213,13 @@ export default function ReviewPlayer() {
     }
   }
 
+
   function exitSecuredMode() {
     hlsRef.current?.destroy()
     hlsRef.current = null
     setStreamMode('plain')
   }
 
-  // Connects 1A directly to the 2A pipeline:
-  // auto-fetches a token from the key-server, then loads the AES-128
-  // encrypted HLS stream so annotations sit on top of a secured video.
   async function loadSecuredStream() {
     if (!videoRef.current) return
     setSecuringStream(true)
@@ -164,8 +253,6 @@ export default function ReviewPlayer() {
       setSecuringStream(false)
     }
   }
-
-  // ── Comments / canvas ──────────────────────────────────────────────────
 
   function postComment() {
     if (!commentText.trim()) return
@@ -208,7 +295,6 @@ export default function ReviewPlayer() {
   return (
     <div className={styles.root}>
 
-      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div className={styles.toolbar}>
 
         <div className={styles.group}>
@@ -269,9 +355,38 @@ export default function ReviewPlayer() {
           <button className={styles.btn} onClick={exportJson}>Export JSON</button>
         </div>
 
+        <div className={styles.group}>
+          <label className={styles.label}>Vitesse</label>
+          {[0.25, 0.5, 1, 1.5, 2].map(r => (
+            <button
+              key={r}
+              className={`${styles.toolBtn} ${playbackRate === r ? styles.toolActive : ''}`}
+              onClick={() => setPlaybackRate(r)}
+            >
+              {r === 1 ? '1×' : `${r}×`}
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.group}>
+          <button
+            className={`${styles.btnSync} ${syncMode ? styles.btnSyncActive : ''}`}
+            onClick={() => setSyncMode(m => !m)}
+            title="Synchronise play/pause/seek with all clients in the session"
+          >
+            {syncMode ? '⟳ Sync ON' : '⟳ Sync OFF'}
+          </button>
+          <button
+            className={`${styles.btnTemporal} ${temporalMode ? styles.btnTemporalActive : ''}`}
+            onClick={() => setTemporalMode(m => !m)}
+            title="Link new annotations to the current video timestamp"
+          >
+            {temporalMode ? '⏱ Temporal ON' : '⏱ Temporal OFF'}
+          </button>
+        </div>
+
       </div>
 
-      {/* ── Video source bar ──────────────────────────────────────────────── */}
       <div className={styles.urlBar}>
         <label className={styles.label}>Video</label>
         {streamMode === 'secured' ? (
@@ -299,13 +414,20 @@ export default function ReviewPlayer() {
         )}
       </div>
 
-      {/* ── Main content ──────────────────────────────────────────────────── */}
       <div className={styles.content}>
 
         <div className={styles.videoArea}>
-          <div className={styles.videoWrap}>
-            {/* When hls.js is active (secured mode) the src must be absent —
-                hls.js owns the media element directly */}
+          <div
+            className={styles.videoWrap}
+            onMouseMove={e => {
+              const now = Date.now()
+              if (now - lastCursorSendRef.current < 40) return
+              lastCursorSendRef.current = now
+              const rect = e.currentTarget.getBoundingClientRect()
+              sendCursor(CLIENT_ID, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height)
+            }}
+            onMouseLeave={() => setRemoteCursors(prev => { const n = { ...prev }; delete n[CLIENT_ID]; return n })}
+          >
             <video
               ref={videoRef}
               src={streamMode === 'plain' ? videoUrl : undefined}
@@ -321,8 +443,25 @@ export default function ReviewPlayer() {
               style={{ pointerEvents: drawMode ? 'all' : 'none' }}
               {...canvasHandlers}
             />
+            {Object.entries(remoteCursors).map(([cid, pos]) => (
+              <div
+                key={cid}
+                className={styles.remoteCursor}
+                style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%`, background: clientColor(cid) }}
+              >
+                <div className={styles.remoteCursorDot} />
+                <span className={styles.remoteCursorLabel}>{cid.slice(0, 4)}</span>
+              </div>
+            ))}
             {drawMode && (
-              <div className={styles.drawBadge}>Drawing mode — click & drag to annotate</div>
+              <div className={styles.drawBadge}>
+                {temporalMode
+                  ? `Temporal mode — annotations linked to ${formatTime(videoCurrentTime)}`
+                  : 'Drawing mode — click & drag to annotate'}
+              </div>
+            )}
+            {syncMode && (
+              <div className={styles.syncBadge}>Sync actif</div>
             )}
           </div>
         </div>
