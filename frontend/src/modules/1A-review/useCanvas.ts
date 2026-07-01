@@ -8,20 +8,32 @@ interface Options {
   color: string
   width: number
   strokes: Stroke[]
+  currentTime?: number   // current video position for temporal fade
   onStrokeComplete: (stroke: Stroke) => void
 }
 
-export function useCanvas({ clientId, tool, color, width, strokes, onStrokeComplete }: Options) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const drawingRef = useRef(false)
+export function useCanvas({ clientId, tool, color, width, strokes, currentTime, onStrokeComplete }: Options) {
+  const canvasRef        = useRef<HTMLCanvasElement>(null)
+  const drawingRef       = useRef(false)
   const currentStrokeRef = useRef<Stroke | null>(null)
-  // Keep a ref in sync with the prop so render() needs no dependencies
-  const strokesRef = useRef<Stroke[]>(strokes)
+  const strokesRef       = useRef<Stroke[]>(strokes)
+  const currentTimeRef   = useRef<number | undefined>(currentTime)
 
   useEffect(() => {
-    strokesRef.current = strokes
-    render()
+    strokesRef.current     = strokes
+    currentTimeRef.current = currentTime
   })
+
+  // rAF loop — render continuously so temporal fades are smooth during playback
+  useEffect(() => {
+    let rafId: number
+    function loop() {
+      render()
+      rafId = requestAnimationFrame(loop)
+    }
+    rafId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(rafId)
+  }, []) // intentionally empty — render() reads everything from refs
 
   function render() {
     const canvas = canvasRef.current
@@ -29,8 +41,12 @@ export function useCanvas({ clientId, tool, color, width, strokes, onStrokeCompl
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    for (const s of strokesRef.current) drawStroke(ctx, s)
-    if (currentStrokeRef.current) drawStroke(ctx, currentStrokeRef.current)
+    for (const s of strokesRef.current) {
+      const opacity = strokeOpacity(s, currentTimeRef.current)
+      if (opacity <= 0) continue
+      drawStroke(ctx, s, opacity)
+    }
+    if (currentStrokeRef.current) drawStroke(ctx, currentStrokeRef.current, 1)
   }
 
   function getPos(e: React.MouseEvent<HTMLCanvasElement>): Point {
@@ -68,29 +84,33 @@ export function useCanvas({ clientId, tool, color, width, strokes, onStrokeCompl
       r.w = pos.x - r.x
       r.h = pos.y - r.y
     }
-    render()
   }, [])
 
   const onMouseUp = useCallback(() => {
     if (!drawingRef.current || !currentStrokeRef.current) return
     drawingRef.current = false
     const stroke = { ...currentStrokeRef.current }
-    // Deep-copy points array so the ref can be cleared safely
     if (stroke.tool === 'pen') {
       stroke.points = [...(stroke as PenStroke).points]
     }
     currentStrokeRef.current = null
-    render()
     onStrokeComplete(stroke)
   }, [onStrokeComplete])
 
   return { canvasRef, onMouseDown, onMouseMove, onMouseUp, onMouseLeave: onMouseUp }
 }
 
-// ─── Rendering helpers ────────────────────────────────────────────────────────
+function strokeOpacity(s: Stroke, currentTime?: number): number {
+  if (s.videoTime === undefined || currentTime === undefined) return 1
+  const diff = Math.abs(currentTime - s.videoTime)
+  if (diff < 1) return 1
+  if (diff < 3) return 1 - (diff - 1) / 2
+  return 0
+}
 
-function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke) {
+function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, opacity: number) {
   ctx.save()
+  ctx.globalAlpha = opacity
   ctx.strokeStyle = s.color
   ctx.fillStyle = s.color
   ctx.lineWidth = s.width

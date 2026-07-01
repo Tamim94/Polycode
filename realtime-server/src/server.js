@@ -62,6 +62,17 @@ wss.on('connection', (ws) => {
     } else if (type === 'clear') {
       session.strokes = []
       broadcast(session, { type: 'clear' }, ws)
+    } else if (type === 'removeStroke') {
+      session.strokes = session.strokes.filter(s => s.id !== msg.strokeId)
+      broadcast(session, { type: 'removeStroke', strokeId: msg.strokeId }, ws)
+    } else if (type === 'seek') {
+      broadcast(session, { type: 'seek', time: msg.time }, ws)
+    } else if (type === 'play') {
+      broadcast(session, { type: 'play', time: msg.time }, ws)
+    } else if (type === 'pause') {
+      broadcast(session, { type: 'pause', time: msg.time }, ws)
+    } else if (type === 'cursor') {
+      broadcast(session, { type: 'cursor', clientId: msg.clientId, x: msg.x, y: msg.y }, ws)
     }
   })
 

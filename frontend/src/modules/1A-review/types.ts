@@ -5,6 +5,7 @@ export interface BaseStroke {
   clientId: string
   color: string
   width: number
+  videoTime?: number  // set when drawn in temporal mode; undefined = always visible
 }
 
 export interface PenStroke extends BaseStroke {

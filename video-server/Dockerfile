@@ -10,6 +10,9 @@ ENV AES_KEY_HEX=$AES_KEY_HEX
 ENV KEY_SERVER_URL=$KEY_SERVER_URL
 
 COPY encrypt.sh /tmp/encrypt.sh
+# Copy demo video if provided — otherwise encrypt.sh generates a synthetic one
+COPY --chown=root . /tmp/video-src/
+RUN [ -f /tmp/video-src/video.mp4 ] && cp /tmp/video-src/video.mp4 /tmp/video.mp4 || true
 RUN chmod +x /tmp/encrypt.sh && /tmp/encrypt.sh
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf

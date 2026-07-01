@@ -28,6 +28,11 @@ Users open the same session ID in multiple browser tabs. They can:
 - Draw freehand strokes, arrows, and rectangles on a Canvas overlay positioned over a video
 - Post timestamped comments that, when clicked, seek the video to that moment
 - See all other users' drawings appear in real time
+- **Undo / Redo** individual strokes (`Ctrl+Z` / `Ctrl+Y`) — scoped to each client, broadcast to all
+- **Temporal annotations** — strokes are linked to the current video timestamp and fade in/out as the video plays through that moment; this is the core innovation of the module
+- **Live cursor tracking** — each participant's mouse position is visible on the canvas in real time, colour-coded by client
+- **Playback sync** — play, pause and seek events are broadcast to all clients in the session so everyone watches the same frame simultaneously
+- **Playback speed** — 0.25× to 2× controls for frame-by-frame annotation review
 - Export the full session (strokes + comments) as a JSON file
 - Share a session via URL — the session ID is stored in `?session=xxx`; clicking **Copy Link** copies the full shareable URL that auto-joins anyone who opens it
 - Load the 2A encrypted stream directly in the 1A player — clicking **Load Secured Stream (2A)** auto-fetches a JWT from the key server, initialises hls.js with the token injected on key requests, and plays the AES-128 encrypted video under the annotation canvas
@@ -36,7 +41,9 @@ Users open the same session ID in multiple browser tabs. They can:
 
 **Canvas API over a third-party lib**: the HTML5 Canvas API gives pixel-level control over rendering without adding a large dependency. Drawing three shape types (pen, arrow, rect) needs ~100 lines of rendering code, not a library.
 
-**Append-only stroke model**: every stroke has a unique ID and is appended to an in-memory array. Two users drawing simultaneously produce two independent strokes — there is no shared mutable cursor state, so there is no conflict to resolve.
+**Append-only stroke model**: every stroke has a unique ID and is appended to an in-memory array. Two users drawing simultaneously produce two independent strokes — there is no shared mutable cursor state, so there is no conflict to resolve. Undo removes a stroke by ID via a `removeStroke` message; the server filters it out and broadcasts the removal to all clients.
+
+**Temporal annotations**: each stroke optionally carries a `videoTime` field. The canvas renders strokes with a time-based opacity — full opacity within 1 second of the stored timestamp, fading to zero at 3 seconds. The canvas runs a `requestAnimationFrame` loop so the fade is smooth without triggering React re-renders on every frame.
 
 **WebSocket for sync**: HTTP polling would introduce latency and waste bandwidth. A persistent WebSocket connection broadcasts each stroke as soon as it is committed (mouse-up), achieving real-time sync with minimal overhead.
 
@@ -102,14 +109,16 @@ Without a valid token, `GET /key` always returns 403. The `.ts` segments themsel
               └──────────────────┘
 
 Message flow:
-  client  →  server:  { type: "join",    sessionId }
-  server  →  client:  { type: "sync",    strokes, comments }
-  client  →  server:  { type: "stroke",  data: Stroke }
-  server  → others:   { type: "stroke",  data: Stroke }
-  client  →  server:  { type: "comment", data: Comment }
-  server  → others:   { type: "comment", data: Comment }
+  client  →  server:  { type: "join",         sessionId }
+  server  →  client:  { type: "sync",         strokes, comments }
+  client  →  server:  { type: "stroke",       data: Stroke }
+  server  → others:   { type: "stroke",       data: Stroke }
+  client  →  server:  { type: "comment",      data: Comment }
+  server  → others:   { type: "comment",      data: Comment }
   client  →  server:  { type: "clear" }
   server  → others:   { type: "clear" }
+  client  →  server:  { type: "removeStroke", strokeId }   ← undo/redo
+  server  → others:   { type: "removeStroke", strokeId }
 ```
 
 ### Module 2A
@@ -229,6 +238,11 @@ Les utilisateurs ouvrent le même identifiant de session dans plusieurs onglets 
 - Dessiner des traits libres, des flèches et des rectangles sur une couche Canvas superposée à la vidéo
 - Poster des commentaires horodatés qui, une fois cliqués, font avancer la vidéo au bon moment
 - Voir en temps réel les dessins de tous les autres utilisateurs
+- **Annuler / Rétablir** des traits individuels (`Ctrl+Z` / `Ctrl+Y`) — limité aux traits du client courant, diffusé à tous
+- **Annotations temporelles** — les traits sont liés au timestamp vidéo courant et apparaissent/disparaissent progressivement selon la position de lecture ; c'est l'innovation principale du module
+- **Curseurs en temps réel** — la position de la souris de chaque participant est visible sur le canvas, avec une couleur distincte par client
+- **Synchronisation de lecture** — play, pause et seek sont diffusés à tous les clients pour que chacun regarde la même image simultanément
+- **Contrôle de vitesse** — de 0.25× à 2× pour annoter image par image
 - Exporter la session complète (traits + commentaires) sous forme de fichier JSON
 - Partager une session par URL — l'identifiant de session est stocké dans `?session=xxx` ; cliquer sur **Copy Link** copie l'URL complète qui rejoint automatiquement la session
 - Charger le flux chiffré 2A directement dans le lecteur 1A — le bouton **Load Secured Stream (2A)** récupère automatiquement un JWT du serveur de clés, initialise hls.js avec le token injecté sur les requêtes de clé, et joue la vidéo AES-128 chiffrée sous la couche d'annotation
@@ -237,7 +251,9 @@ Les utilisateurs ouvrent le même identifiant de session dans plusieurs onglets 
 
 **Canvas API plutôt qu'une bibliothèque tierce** : l'API Canvas HTML5 donne un contrôle pixel par pixel sur le rendu sans ajouter de dépendance lourde. Dessiner trois types de formes (stylo, flèche, rectangle) ne nécessite qu'une centaine de lignes de code de rendu.
 
-**Modèle de traits en ajout seul** : chaque trait possède un identifiant unique et est ajouté à un tableau en mémoire. Deux utilisateurs qui dessinent simultanément produisent deux traits indépendants — il n'y a pas d'état mutable partagé, donc pas de conflit à résoudre.
+**Modèle de traits en ajout seul** : chaque trait possède un identifiant unique et est ajouté à un tableau en mémoire. Deux utilisateurs qui dessinent simultanément produisent deux traits indépendants — il n'y a pas d'état mutable partagé, donc pas de conflit à résoudre. L'annulation supprime un trait par identifiant via un message `removeStroke` ; le serveur le filtre et diffuse la suppression à tous les clients.
+
+**Annotations temporelles** : chaque trait porte optionnellement un champ `videoTime`. Le canvas calcule une opacité par trait selon la distance temporelle — pleine opacité à moins d'une seconde du timestamp, fondu jusqu'à zéro à trois secondes. Le rendu tourne en boucle `requestAnimationFrame` pour que le fondu soit fluide sans déclencher de re-rendus React à chaque frame.
 
 **WebSocket pour la synchronisation** : le polling HTTP introduirait de la latence et du gaspillage de bande passante. Une connexion WebSocket persistante diffuse chaque trait dès qu'il est validé (relâchement du bouton souris), assurant une synchronisation en temps réel avec un minimum de surcharge.
 
@@ -303,14 +319,16 @@ Sans token valide, `GET /key` renvoie systématiquement 403. Les segments `.ts` 
               └──────────────────┘
 
 Flux de messages :
-  client  →  serveur :  { type: "join",    sessionId }
-  serveur →  client  :  { type: "sync",    strokes, comments }
-  client  →  serveur :  { type: "stroke",  data: Stroke }
-  serveur → autres   :  { type: "stroke",  data: Stroke }
-  client  →  serveur :  { type: "comment", data: Comment }
-  serveur → autres   :  { type: "comment", data: Comment }
+  client  →  serveur :  { type: "join",         sessionId }
+  serveur →  client  :  { type: "sync",         strokes, comments }
+  client  →  serveur :  { type: "stroke",       data: Stroke }
+  serveur → autres   :  { type: "stroke",       data: Stroke }
+  client  →  serveur :  { type: "comment",      data: Comment }
+  serveur → autres   :  { type: "comment",      data: Comment }
   client  →  serveur :  { type: "clear" }
   serveur → autres   :  { type: "clear" }
+  client  →  serveur :  { type: "removeStroke", strokeId }   ← annuler/rétablir
+  serveur → autres   :  { type: "removeStroke", strokeId }
 ```
 
 ### Module 2A
