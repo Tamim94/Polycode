@@ -34,6 +34,8 @@ export function useWebSocket(sessionId: string) {
           setState(prev => ({ ...prev, comments: [...prev.comments, msg.data] }))
         } else if (msg.type === 'clear') {
           setState(prev => ({ ...prev, strokes: [] }))
+        } else if (msg.type === 'removeStroke') {
+          setState(prev => ({ ...prev, strokes: prev.strokes.filter(s => s.id !== msg.strokeId) }))
         }
       }
 
@@ -66,5 +68,9 @@ export function useWebSocket(sessionId: string) {
     wsRef.current?.send(JSON.stringify({ type: 'clear', sessionId }))
   }, [sessionId])
 
-  return { connected, state, setState, sendStroke, sendComment, sendClear }
+  const sendRemoveStroke = useCallback((strokeId: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'removeStroke', sessionId, strokeId }))
+  }, [sessionId])
+
+  return { connected, state, setState, sendStroke, sendComment, sendClear, sendRemoveStroke }
 }

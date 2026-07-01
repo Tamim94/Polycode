@@ -28,6 +28,7 @@ Users open the same session ID in multiple browser tabs. They can:
 - Draw freehand strokes, arrows, and rectangles on a Canvas overlay positioned over a video
 - Post timestamped comments that, when clicked, seek the video to that moment
 - See all other users' drawings appear in real time
+- **Undo / Redo** individual strokes with the toolbar buttons or `Ctrl+Z` / `Ctrl+Y` — each client can only undo their own strokes; the change is broadcast to all clients in real time
 - Export the full session (strokes + comments) as a JSON file
 - Share a session via URL — the session ID is stored in `?session=xxx`; clicking **Copy Link** copies the full shareable URL that auto-joins anyone who opens it
 - Load the 2A encrypted stream directly in the 1A player — clicking **Load Secured Stream (2A)** auto-fetches a JWT from the key server, initialises hls.js with the token injected on key requests, and plays the AES-128 encrypted video under the annotation canvas
@@ -102,14 +103,16 @@ Without a valid token, `GET /key` always returns 403. The `.ts` segments themsel
               └──────────────────┘
 
 Message flow:
-  client  →  server:  { type: "join",    sessionId }
-  server  →  client:  { type: "sync",    strokes, comments }
-  client  →  server:  { type: "stroke",  data: Stroke }
-  server  → others:   { type: "stroke",  data: Stroke }
-  client  →  server:  { type: "comment", data: Comment }
-  server  → others:   { type: "comment", data: Comment }
+  client  →  server:  { type: "join",         sessionId }
+  server  →  client:  { type: "sync",         strokes, comments }
+  client  →  server:  { type: "stroke",       data: Stroke }
+  server  → others:   { type: "stroke",       data: Stroke }
+  client  →  server:  { type: "comment",      data: Comment }
+  server  → others:   { type: "comment",      data: Comment }
   client  →  server:  { type: "clear" }
   server  → others:   { type: "clear" }
+  client  →  server:  { type: "removeStroke", strokeId }   ← undo/redo
+  server  → others:   { type: "removeStroke", strokeId }
 ```
 
 ### Module 2A
@@ -229,6 +232,7 @@ Les utilisateurs ouvrent le même identifiant de session dans plusieurs onglets 
 - Dessiner des traits libres, des flèches et des rectangles sur une couche Canvas superposée à la vidéo
 - Poster des commentaires horodatés qui, une fois cliqués, font avancer la vidéo au bon moment
 - Voir en temps réel les dessins de tous les autres utilisateurs
+- **Annuler / Rétablir** des traits individuels via les boutons de la barre d'outils ou `Ctrl+Z` / `Ctrl+Y` — chaque client ne peut annuler que ses propres traits ; la modification est diffusée en temps réel à tous les clients
 - Exporter la session complète (traits + commentaires) sous forme de fichier JSON
 - Partager une session par URL — l'identifiant de session est stocké dans `?session=xxx` ; cliquer sur **Copy Link** copie l'URL complète qui rejoint automatiquement la session
 - Charger le flux chiffré 2A directement dans le lecteur 1A — le bouton **Load Secured Stream (2A)** récupère automatiquement un JWT du serveur de clés, initialise hls.js avec le token injecté sur les requêtes de clé, et joue la vidéo AES-128 chiffrée sous la couche d'annotation
@@ -303,14 +307,16 @@ Sans token valide, `GET /key` renvoie systématiquement 403. Les segments `.ts` 
               └──────────────────┘
 
 Flux de messages :
-  client  →  serveur :  { type: "join",    sessionId }
-  serveur →  client  :  { type: "sync",    strokes, comments }
-  client  →  serveur :  { type: "stroke",  data: Stroke }
-  serveur → autres   :  { type: "stroke",  data: Stroke }
-  client  →  serveur :  { type: "comment", data: Comment }
-  serveur → autres   :  { type: "comment", data: Comment }
+  client  →  serveur :  { type: "join",         sessionId }
+  serveur →  client  :  { type: "sync",         strokes, comments }
+  client  →  serveur :  { type: "stroke",       data: Stroke }
+  serveur → autres   :  { type: "stroke",       data: Stroke }
+  client  →  serveur :  { type: "comment",      data: Comment }
+  serveur → autres   :  { type: "comment",      data: Comment }
   client  →  serveur :  { type: "clear" }
   serveur → autres   :  { type: "clear" }
+  client  →  serveur :  { type: "removeStroke", strokeId }   ← annuler/rétablir
+  serveur → autres   :  { type: "removeStroke", strokeId }
 ```
 
 ### Module 2A

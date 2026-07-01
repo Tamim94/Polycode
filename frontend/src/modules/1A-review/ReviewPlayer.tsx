@@ -35,18 +35,54 @@ export default function ReviewPlayer() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef   = useRef<Hls | null>(null)
 
-  const { connected, state, setState, sendStroke, sendComment, sendClear } = useWebSocket(sessionId)
+  const { connected, state, setState, sendStroke, sendComment, sendClear, sendRemoveStroke } = useWebSocket(sessionId)
+
+  // Local undo stack — only tracks strokes drawn by this client
+  const [undoStack, setUndoStack] = useState<Parameters<typeof sendStroke>[0][]>([])
 
   // Tear down hls.js when the component unmounts
   useEffect(() => () => { hlsRef.current?.destroy() }, [])
 
   const handleStrokeComplete = useCallback(
     (stroke: Parameters<typeof sendStroke>[0]) => {
+      setUndoStack([]) // drawing a new stroke invalidates redo history
       setState(prev => ({ ...prev, strokes: [...prev.strokes, stroke] }))
       sendStroke(stroke)
     },
     [sendStroke, setState],
   )
+
+  const handleUndo = useCallback(() => {
+    setState(prev => {
+      const myStrokes = prev.strokes.filter(s => s.clientId === CLIENT_ID)
+      if (myStrokes.length === 0) return prev
+      const target = myStrokes[myStrokes.length - 1]
+      setUndoStack(stack => [...stack, target])
+      sendRemoveStroke(target.id)
+      return { ...prev, strokes: prev.strokes.filter(s => s.id !== target.id) }
+    })
+  }, [sendRemoveStroke])
+
+  const handleRedo = useCallback(() => {
+    setUndoStack(stack => {
+      if (stack.length === 0) return stack
+      const stroke = stack[stack.length - 1]
+      setState(prev => ({ ...prev, strokes: [...prev.strokes, stroke] }))
+      sendStroke(stroke)
+      return stack.slice(0, -1)
+    })
+  }, [sendStroke, setState])
+
+  // Keyboard shortcuts: Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!e.ctrlKey && !e.metaKey) return
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); handleUndo() }
+      if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); handleRedo() }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleUndo, handleRedo])
 
   const { canvasRef, ...canvasHandlers } = useCanvas({
     clientId: CLIENT_ID,
@@ -150,6 +186,7 @@ export default function ReviewPlayer() {
   }
 
   function handleClear() {
+    setUndoStack([])
     setState(prev => ({ ...prev, strokes: [] }))
     sendClear()
   }
@@ -211,6 +248,22 @@ export default function ReviewPlayer() {
             onClick={() => setDrawMode(d => !d)}
           >
             {drawMode ? 'Drawing ON' : 'Drawing OFF'}
+          </button>
+          <button
+            className={styles.btnGhost}
+            onClick={handleUndo}
+            disabled={state.strokes.filter(s => s.clientId === CLIENT_ID).length === 0}
+            title="Undo last stroke (Ctrl+Z)"
+          >
+            ↩ Undo
+          </button>
+          <button
+            className={styles.btnGhost}
+            onClick={handleRedo}
+            disabled={undoStack.length === 0}
+            title="Redo (Ctrl+Y)"
+          >
+            ↪ Redo
           </button>
           <button className={styles.btnDanger} onClick={handleClear}>Clear</button>
           <button className={styles.btn} onClick={exportJson}>Export JSON</button>

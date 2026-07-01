@@ -81,7 +81,8 @@
   border: 1px solid #2a2a38;
   color: #9898b0;
 }
-.btnGhost:hover { border-color: #a78bfa; color: #e8e8f0; }
+.btnGhost:hover:not(:disabled) { border-color: #a78bfa; color: #e8e8f0; }
+.btnGhost:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .btnDanger {
   background: transparent;

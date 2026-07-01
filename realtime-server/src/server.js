@@ -62,6 +62,9 @@ wss.on('connection', (ws) => {
     } else if (type === 'clear') {
       session.strokes = []
       broadcast(session, { type: 'clear' }, ws)
+    } else if (type === 'removeStroke') {
+      session.strokes = session.strokes.filter(s => s.id !== msg.strokeId)
+      broadcast(session, { type: 'removeStroke', strokeId: msg.strokeId }, ws)
     }
   })
 
