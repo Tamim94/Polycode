@@ -6,5 +6,4 @@ __pycache__/
 *.pyc
 .venv/
 .idea/
-*.mp4
-frontend/public/
+ai-data/videos/_archive/
